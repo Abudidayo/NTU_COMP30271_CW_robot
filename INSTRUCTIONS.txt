@@ -40,3 +40,9 @@ source /opt/ros/humble/setup.bash
 source ~/ros2_ws/install/setup.bash
 export IGN_GAZEBO_MODEL_PATH=$IGN_GAZEBO_MODEL_PATH:~/ros2_ws/src/ntu_robotsim/models
 ros2 launch ntu_robotsim yolo_unified.launch.py
+
+### 5.1 Run yolo Live counter
+cd /home/ntu-user/ros2_ws/src/NTU_COMP30271_CW_RobotSim && python3 detection_printer.py
+
+### 5.2 Run yolo Logger
+cd /home/ntu-user/ros2_ws/src/NTU_COMP30271_CW_RobotSim && python3 detection_logger.py
