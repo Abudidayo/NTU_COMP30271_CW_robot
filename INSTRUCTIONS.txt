@@ -10,7 +10,7 @@ source install/setup.bash
 ---------------------------------------------
 
 ## 2. Run Unified Launch File
-cd ros2_ws/
+cd /home/ntu-user/ros2_ws
 source /opt/ros/humble/setup.bash
 source ~/ros2_ws/install/setup.bash
 export IGN_GAZEBO_MODEL_PATH=$IGN_GAZEBO_MODEL_PATH:~/ros2_ws/src/ntu_robotsim/models
