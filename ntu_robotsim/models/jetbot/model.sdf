@@ -277,6 +277,42 @@
             </camera>
         </sensor>
 
+        <!-- 360-degree 2D LIDAR for wall following -->
+        <sensor name="front_laser" type="gpu_lidar">
+            <topic>laser_scan</topic>
+            <ignition_frame_id>velodyne</ignition_frame_id>
+            <visualize>0</visualize>
+            <update_rate>10</update_rate>
+            <always_on>1</always_on>
+            <lidar>
+                <scan>
+                    <horizontal>
+                        <samples>360</samples>
+                        <resolution>1</resolution>
+                        <min_angle>-3.14159</min_angle>
+                        <max_angle>3.14159</max_angle>
+                    </horizontal>
+                    <vertical>
+                        <samples>1</samples>
+                        <resolution>1</resolution>
+                        <min_angle>0</min_angle>
+                        <max_angle>0</max_angle>
+                    </vertical>
+                </scan>
+                <range>
+                    <min>0.05</min>
+                    <max>10</max>
+                    <resolution>0.01</resolution>
+                </range>
+                <noise>
+                    <type>gaussian</type>
+                    <mean>0</mean>
+                    <stddev>0.01</stddev>
+                </noise>
+            </lidar>
+            <pose>0 0 0.27 0 0 0</pose>
+        </sensor>
+
     </link>
 
     <link name='left_wheel'>

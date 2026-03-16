@@ -15,26 +15,49 @@ source install/setup.bash
 
 ---------------------------------------------
 
-## 2. Run Unified Launch File
+## 2. Run Unified Launch File (single command launches everything)
 cd /home/ntu-user/ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-export IGN_GAZEBO_MODEL_PATH=$IGN_GAZEBO_MODEL_PATH:~/ros2_ws/src/ntu_robotsim/models
 ros2 launch ntu_robotsim yolo_unified.launch.py
 
-### 2.1 Run yolo Live counter
-cd /home/ntu-user/ros2_ws/src/NTU_COMP30271_CW_RobotSim/ntu_robotsim/launch && python3 detection_printer.py
+This single command starts all components in sequence:
+  - Gazebo simulation (cwmaze world)          [0s]
+  - Robot spawn (Atlas jetbot)                [3s]
+  - Odometry-to-TF broadcaster               [5s]
+  - OctoMap 3D mapping server                 [6s]
+  - RViz2 visualisation                       [5s]
+  - Nav2 navigation stack                     [8s]
+  - Static map-to-odom TF                     [0s]
+  - YOLO object detection (GPU)              [10s]
+  - Right-hand wall follower + sign react    [15s]
 
-
-### 2.2 Run yolo Logger
-cd /home/ntu-user/ros2_ws/src/NTU_COMP30271_CW_RobotSim/ntu_robotsim/launch && python3 detection_logger.py
-
-### 2.3 Run Explore
-ros2 launch ntu_robotsim_octomap explore.launch.py
+The robot will autonomously:
+  - Follow the right wall to traverse the entire maze
+  - Detect and react to signs:
+      Stop_Sign  -> stop for 3 seconds, then resume
+      Slow_Sign  -> reduce speed to 50%
+      Fast_Sign  -> increase speed to 150%
+  - Count detected objects (Orange, Tree, Car)
+  - Save object counts to ~/ros2_ws/object_counts.txt
 
 ---------------------------------------------
 
-## OPTIONAL: Indivisual run for debugging
+## 3. Object Detection Outputs
+
+### 3.1 Live object counts (updated in terminal and saved to file)
+Object counts are printed to the launch terminal every 10 seconds.
+They are also saved to: ~/ros2_ws/object_counts.txt
+
+### 3.2 Run YOLO Live Counter (optional, separate terminal)
+cd /home/ntu-user/ros2_ws/src/NTU_COMP30271_CW_RobotSim/ntu_robotsim/launch && python3 detection_printer.py
+
+### 3.3 Run YOLO Logger (optional, separate terminal)
+cd /home/ntu-user/ros2_ws/src/NTU_COMP30271_CW_RobotSim/ntu_robotsim/launch && python3 detection_logger.py
+
+---------------------------------------------
+
+## OPTIONAL: Individual run for debugging
 
 # Step A: Start Simulation Environment
 ros2 launch ntu_robotsim cwmaze.launch.py
@@ -60,7 +83,6 @@ ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 map atlas/odom
 # Step H: Keyboard Teleop (Manual Control)
 ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r /cmd_vel:=/atlas/cmd_vel
 
-# Step I: Autonomous Exploration
-# Once the unified system is running, you can start autonomous mapping:
-ros2 launch ntu_robotsim explore.launch.py
-
+# Step I: Wall Follower (standalone, if not using unified launch)
+cd /home/ntu-user/ros2_ws && source install/setup.bash
+python3 src/NTU_COMP30271_CW_RobotSim/ntu_robotsim/launch/wall_follower.py --ros-args -p use_sim_time:=true

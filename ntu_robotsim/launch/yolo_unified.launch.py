@@ -1,7 +1,7 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, TimerAction
+from launch.actions import ExecuteProcess, IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -109,11 +109,32 @@ def generate_launch_description():
                     FindPackageShare('yolo_bringup'), '/launch/yolo.launch.py'
                 ]),
                 launch_arguments={
-                    'model': '/home/ntu-user/ros2_ws/src/NTU_COMP30271_CW_RobotSim/ntu_robotsim/models/custom_models/best_nano.pt', 
+                    'model': '/home/ntu-user/ros2_ws/src/NTU_COMP30271_CW_RobotSim/ntu_robotsim/models/custom_models/best_nano.pt',
                     'device': 'cuda:0',
                     'threshold': '0.5',
                     'input_image_topic': '/atlas/rgbd_camera/image',
                 }.items()
+            )
+        ]
+    )
+
+    # Step I: Right-hand wall following with sign detection
+    wall_follower_script = os.path.join(
+        pkg_ntu_robotsim, 'launch', 'wall_follower.py')
+    launch_wall_follower = TimerAction(
+        period=15.0,
+        actions=[
+            ExecuteProcess(
+                cmd=[
+                    'python3', wall_follower_script,
+                    '--ros-args',
+                    '-p', 'use_sim_time:=true',
+                    '-p', 'linear_speed:=0.20',
+                    '-p', 'wall_follow_dist:=0.6',
+                    '-p', 'front_stop_dist:=0.5',
+                    '-p', 'stop_duration:=3.0',
+                ],
+                output='screen',
             )
         ]
     )
@@ -127,4 +148,5 @@ def generate_launch_description():
         launch_nav2,
         static_map_tf,
         launch_yolo,
+        launch_wall_follower,
     ])
