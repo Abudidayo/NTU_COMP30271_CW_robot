@@ -2,6 +2,12 @@
 
 ---------------------------------------------
 
+## 0. Dependencies
+sudo apt-get update
+sudo apt install -y ros-humble-navigation2 ros-humble-nav2-bringup
+
+---------------------------------------------
+
 ## 1. Build and Source
 cd /home/ntu-user/ros2_ws
 colcon build --symlink-install
