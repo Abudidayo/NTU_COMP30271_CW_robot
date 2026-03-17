@@ -15,7 +15,7 @@ import os
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
-from sensor_msgs.msg import PointCloud2
+from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 import numpy as np
 
@@ -27,22 +27,6 @@ except ImportError:
 
 COUNTS_FILE = os.path.expanduser('~/ros2_ws/object_counts.txt')
 
-
-def pointcloud2_to_xy_distances(msg):
-    """Extract 2D (angle, distance) arrays from a PointCloud2 message."""
-    from sensor_msgs_py import point_cloud2 as pc2
-    xs, ys = [], []
-    for p in pc2.read_points(msg, field_names=('x', 'y', 'z'), skip_nans=True):
-        x, y = float(p[0]), float(p[1])
-        d = np.hypot(x, y)
-        if 0.05 < d < 8.0:
-            xs.append(x)
-            ys.append(y)
-    if not xs:
-        return None, None
-    xs = np.array(xs, dtype=np.float32)
-    ys = np.array(ys, dtype=np.float32)
-    return np.arctan2(ys, xs), np.hypot(xs, ys)
 
 
 class WallFollower(Node):
@@ -67,8 +51,12 @@ class WallFollower(Node):
             reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST, depth=5)
 
+        # Real JetBot: /scan from pointcloud_to_laserscan (RealSense D435 depth → LaserScan)
+        # Note: RealSense FOV is ~85° horizontal, so right/left sectors beyond ±43° will
+        # return inf. The robot will still navigate using front distance + whatever side
+        # data is available at the edges of the FOV.
         self.create_subscription(
-            PointCloud2, '/atlas/velodyne_points',
+            LaserScan, '/scan',
             self.lidar_cb, sensor_qos)
 
         if HAS_YOLO:
@@ -80,7 +68,7 @@ class WallFollower(Node):
             self.get_logger().warn('yolo_msgs not found – sign detection disabled')
 
         # --- publisher -------------------------------------------------------
-        self.cmd_pub = self.create_publisher(Twist, '/atlas/cmd_vel', 10)
+        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
 
         # --- state -----------------------------------------------------------
         self.front_dist = float('inf')
@@ -106,25 +94,30 @@ class WallFollower(Node):
             f'Wall follower started  speed={self.linear_speed}  '
             f'wall_d={self.wall_follow_dist}  front_d={self.front_stop_dist}')
 
-    # ── LIDAR ───────────────────────────────────────────────────────────────
+    # ── LASER SCAN ──────────────────────────────────────────────────────────
     def lidar_cb(self, msg):
-        angles, dists = pointcloud2_to_xy_distances(msg)
-        if angles is None:
-            self.get_logger().warn(
-                'LIDAR cb: no valid points parsed', throttle_duration_sec=3.0)
+        """Process a LaserScan message (from pointcloud_to_laserscan on real JetBot)."""
+        ranges = np.array(msg.ranges, dtype=np.float32)
+        n = len(ranges)
+        if n == 0:
+            self.get_logger().warn('LaserScan cb: empty ranges', throttle_duration_sec=3.0)
             return
+
+        angles = msg.angle_min + np.arange(n) * msg.angle_increment
+        # Replace inf/nan with large value so sector_min works cleanly
+        ranges = np.where(np.isfinite(ranges), ranges, 9.9)
         self.lidar_ok = True
 
         def sector_min(lo_deg, hi_deg, max_r=3.0):
             lo, hi = np.radians(lo_deg), np.radians(hi_deg)
-            m = (angles >= lo) & (angles <= hi) & (dists < max_r)
-            return float(np.min(dists[m])) if np.any(m) else float('inf')
+            m = (angles >= lo) & (angles <= hi) & (ranges < max_r)
+            return float(np.min(ranges[m])) if np.any(m) else float('inf')
 
         self.front_dist = sector_min(-30, 30)
-        self.right_dist = sector_min(-120, -60)
-        self.left_dist  = sector_min(60, 120)
+        self.right_dist = sector_min(-42, -25)   # right edge of RealSense FOV (~85° wide)
+        self.left_dist  = sector_min(25, 42)     # left edge of RealSense FOV
         self.get_logger().info(
-            f'LIDAR pts={len(dists)}  '
+            f'Scan pts={n}  '
             f'front={self.front_dist:.2f}  '
             f'right={self.right_dist:.2f}  '
             f'left={self.left_dist:.2f}',

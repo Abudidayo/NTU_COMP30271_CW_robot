@@ -1,0 +1,37 @@
+# pointcloud_to_laserscan.yaml
+# Converts the RealSense D435 depth point cloud to a 2D LaserScan for:
+#   - wall_follower.py  (obstacle detection)
+#   - rf2o_laser_odometry  (pose estimation)
+#
+# Input topic:  /camera/depth/color/points  (remapped in launch file)
+# Output topic: /scan
+
+/**:
+  ros__parameters:
+    # Height range to slice from the 3D cloud into the 2D scan plane.
+    # Set to capture obstacles at roughly the robot's drive plane (~5-30cm above ground).
+    # JetBot base is 0.15m high; camera is at 0.19m. Walls start at ground level.
+    min_height: 0.05      # ignore ground returns below this height (m)
+    max_height: 0.50      # ignore tall obstacles above this (m); walls are ~1m but
+                          # we want a ground-plane slice for odometry quality
+
+    # Angular range — RealSense D435 horizontal FOV is ~87 degrees (~±43.5°)
+    angle_min: -0.7854    # -45 deg in radians
+    angle_max:  0.7854    # +45 deg in radians
+    angle_increment: 0.00872  # 0.5 deg resolution (174 beams across 87°)
+
+    # Scan time matching the depth camera framerate (30 Hz → 0.033s)
+    scan_time: 0.033
+
+    # Range limits
+    range_min: 0.15       # D435 min reliable depth (m)
+    range_max: 4.0        # cap at 4m — walls are close in a maze
+
+    # Target frame — must match the laser TF frame in the bringup launch
+    target_frame: laser
+
+    # Concurrency — keep at 1 for Jetson Nano to avoid CPU overload
+    concurrency_level: 1
+
+    # Use the cloud's timestamp (False = use arrival time)
+    use_inf: True         # publish inf for out-of-range instead of range_max

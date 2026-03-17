@@ -22,6 +22,7 @@ import math
 import os
 import time
 from datetime import datetime
+from typing import Optional
 
 import rclpy
 from rclpy.node import Node
@@ -67,9 +68,9 @@ class LandmarkCSVLogger(Node):
         self.yaw_deg = 0.0
 
         # Starting position — captured from the first odometry message
-        self.start_x: float | None = None
-        self.start_y: float | None = None
-        self.start_z: float | None = None
+        self.start_x = None  # type: Optional[float]
+        self.start_y = None  # type: Optional[float]
+        self.start_z = None  # type: Optional[float]
 
         # Timing
         self.start_time = time.monotonic()
@@ -86,9 +87,10 @@ class LandmarkCSVLogger(Node):
             depth=5,
         )
 
+        # Real JetBot: /odom from visual odometry (rf2o_laser_odometry or similar)
         self.create_subscription(
             Odometry,
-            '/atlas/odom_ground_truth',
+            '/odom',
             self._odom_cb,
             best_effort_qos,
         )
