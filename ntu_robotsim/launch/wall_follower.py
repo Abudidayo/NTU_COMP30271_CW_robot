@@ -152,7 +152,7 @@ class WallFollower(Node):
                 continue
 
             # --- sign reactions: only when close enough (area >= 6000) ---
-            if area < 4000:
+            if area < 6000:
                 continue
 
             # cooldown: ignore same sign class within 30s (sim-time)
