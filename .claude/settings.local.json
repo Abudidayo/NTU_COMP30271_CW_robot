@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(grep -r 'def ' /c/Users/abudi/Documents/NTU_COMP30271_CW_RobotSim/ntu_robotsim/launch/*.py)",
-      "WebFetch(domain:www.waveshare.com)"
-    ]
-  }
-}
