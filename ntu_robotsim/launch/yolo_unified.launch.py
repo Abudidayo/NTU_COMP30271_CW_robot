@@ -122,7 +122,7 @@ def generate_launch_description():
     wall_follower_script = os.path.join(
         pkg_ntu_robotsim, 'launch', 'wall_follower.py')
     launch_wall_follower = TimerAction(
-        period=15.0,
+        period=20.0,
         actions=[
             ExecuteProcess(
                 cmd=[

@@ -92,6 +92,16 @@ class WallFollower(Node):
         self.stop_start_ns = None
         self.speed_factor = 1.0
         self.sign_cooldown = {}
+        self.permanent_stop = False           # stop sign = permanent halt
+
+        # --- speed change timer (for both slow and fast signs) -----------------
+        self.speed_change_start_ns = None
+        self.speed_change_duration = 10.0     # seconds before reverting to normal
+
+        # --- stop sign confirmation (must see for N seconds before stopping) --
+        self.stop_confirm_secs = 5.0          # seconds of continuous sighting
+        self.stop_first_seen_ns = None        # when we first started seeing it
+        self.stop_last_seen_ns = None         # last time stop sign was detected
 
         # --- object counting -------------------------------------------------
         self.object_counts = {}
@@ -161,25 +171,41 @@ class WallFollower(Node):
                 continue
 
             if 'stop' in name.lower():
-                self.get_logger().info(
-                    f'STOP sign  conf={d.score:.2f}  area={area:.0f} – '
-                    f'stopping {self.stop_duration}s')
-                self.stopped = True
-                self.stop_start_ns = now_ns
-                self.sign_cooldown[name] = now_ns
+                # First time seeing stop sign → start the confirmation timer
+                self.stop_last_seen_ns = now_ns
+                if self.stop_first_seen_ns is None:
+                    self.stop_first_seen_ns = now_ns
+                    self.get_logger().info(
+                        f'STOP sign spotted  conf={d.score:.2f}  area={area:.0f} – '
+                        f'waiting {self.stop_confirm_secs}s to confirm')
+                # Check if we've been seeing it long enough
+                elapsed = (now_ns - self.stop_first_seen_ns) / 1e9
+                if elapsed >= self.stop_confirm_secs:
+                    self.get_logger().info(
+                        f'STOP sign CONFIRMED after {elapsed:.1f}s – '
+                        f'PERMANENTLY STOPPED')
+                    self.permanent_stop = True
+                    self.stop_first_seen_ns = None
+                    self.sign_cooldown[name] = now_ns
+                else:
+                    self.get_logger().info(
+                        f'STOP sign seen for {elapsed:.1f}/{self.stop_confirm_secs}s',
+                        throttle_duration_sec=1.0)
 
             elif 'slow' in name.lower():
                 self.get_logger().info(
                     f'SLOW sign  conf={d.score:.2f}  area={area:.0f} – '
-                    f'reducing speed')
-                self.speed_factor = 0.5
+                    f'reducing speed for {self.speed_change_duration}s')
+                self.speed_factor = 0.25
+                self.speed_change_start_ns = now_ns
                 self.sign_cooldown[name] = now_ns
 
             elif 'fast' in name.lower():
                 self.get_logger().info(
                     f'FAST sign  conf={d.score:.2f}  area={area:.0f} – '
-                    f'increasing speed')
-                self.speed_factor = 1.5
+                    f'increasing speed for {self.speed_change_duration}s')
+                self.speed_factor = 2.5
+                self.speed_change_start_ns = now_ns
                 self.sign_cooldown[name] = now_ns
 
     # ── SAVE OBJECT COUNTS TO FILE ─────────────────────────────────────────
@@ -203,18 +229,28 @@ class WallFollower(Node):
     def control_loop(self):
         twist = Twist()
 
-        # ---- handle stop state ---------------------------------------------
-        if self.stopped:
-            if self.stop_start_ns is not None:
-                elapsed = (self.get_clock().now().nanoseconds
-                           - self.stop_start_ns) / 1e9
-                if elapsed > self.stop_duration:
-                    self.stopped = False
-                    self.stop_start_ns = None
-                    self.speed_factor = 1.0
-                    self.get_logger().info('Resuming after stop')
+        # ---- reset stop confirmation if sign disappeared for >2s ------------
+        if self.stop_first_seen_ns is not None and self.stop_last_seen_ns is not None:
+            gap = (self.get_clock().now().nanoseconds - self.stop_last_seen_ns) / 1e9
+            if gap > 2.0:
+                self.get_logger().info('Stop sign lost – resetting confirmation timer')
+                self.stop_first_seen_ns = None
+                self.stop_last_seen_ns = None
+
+        # ---- permanent stop (stop sign confirmed) ----------------------------
+        if self.permanent_stop:
             self.cmd_pub.publish(twist)
             return
+
+        # ---- speed change expires after a few seconds ------------------------
+        if self.speed_change_start_ns is not None:
+            elapsed = (self.get_clock().now().nanoseconds
+                       - self.speed_change_start_ns) / 1e9
+            if elapsed > self.speed_change_duration:
+                self.get_logger().info(
+                    f'Speed change expired (was {self.speed_factor}x) – back to normal')
+                self.speed_factor = 1.0
+                self.speed_change_start_ns = None
 
         # ---- wait for first LIDAR scan -------------------------------------
         if not self.lidar_ok:
