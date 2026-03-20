@@ -108,6 +108,19 @@ class WallFollower(Node):
         self.object_cooldown = {}
         self.COUNTABLE = {'orange', 'tree', 'trees', 'car'}
 
+        # --- object centering & pause ----------------------------------------
+        self.obj_pause = False              # True = pausing in front of object
+        self.obj_pause_start_ns = None
+        self.obj_pause_duration = 5.0       # seconds to stay in front
+        self.obj_centering = False          # True = steering to center the object
+        self.obj_bbox_center_x = None       # bbox center x in pixels
+        self.obj_target_name = None         # name of object being centered on
+        self.obj_target_score = 0.0         # confidence score
+        self.obj_avg_area = 0.0             # average bbox area of group
+        self.obj_min_area = 8000.0          # min avg area before pausing (close enough)
+        self.image_width = 640.0            # camera image width in pixels
+        self.obj_visited = set()            # objects already centered & counted
+
         # --- control loop at 10 Hz ------------------------------------------
         self.create_timer(0.1, self.control_loop)
         # --- save object counts every 10 s ----------------------------------
@@ -143,6 +156,21 @@ class WallFollower(Node):
     # ── YOLO DETECTIONS ─────────────────────────────────────────────────────
     def detection_cb(self, msg):
         now_ns = self.get_clock().now().nanoseconds
+
+        # --- first pass: collect positions & areas per countable type ----------
+        frame_info = {}   # {name_lower: {'count': N, 'xs': [...], 'areas': [...]}}
+        for d in msg.detections:
+            if d.score < 0.5:
+                continue
+            nl = d.class_name.lower()
+            area = d.bbox.size.x * d.bbox.size.y
+            if nl in self.COUNTABLE and area > 2000:
+                if nl not in frame_info:
+                    frame_info[nl] = {'count': 0, 'xs': [], 'areas': []}
+                frame_info[nl]['count'] += 1
+                frame_info[nl]['xs'].append(d.bbox.center.position.x)
+                frame_info[nl]['areas'].append(area)
+
         for d in msg.detections:
             if d.score < 0.5:
                 continue
@@ -151,14 +179,49 @@ class WallFollower(Node):
 
             # --- count objects (orange, tree, car) ---
             if name.lower() in self.COUNTABLE and area > 2000:
+                if name.lower() in self.obj_visited:
+                    continue
+                nl = name.lower()
+                info = frame_info.get(nl, {'count': 0})
                 last_count = self.object_cooldown.get(name, 0)
-                if (now_ns - last_count) > 15_000_000_000:
+                need_pause = info['count'] >= 2
+
+                # Multiple detected → always trigger centering (no cooldown)
+                if need_pause and not self.obj_centering and not self.obj_pause:
+                    avg_x = sum(info['xs']) / len(info['xs'])
+                    avg_area = sum(info['areas']) / len(info['areas'])
+                    self.obj_centering = True
+                    self.obj_target_name = name
+                    self.obj_target_score = d.score
+                    self.obj_bbox_center_x = avg_x
+                    self.obj_avg_area = avg_area
+                    self.get_logger().info(
+                        f'OBJECT spotted: {name} x{info["count"]}  '
+                        f'avg_area={avg_area:.0f}  avg_x={avg_x:.0f} – '
+                        f'centering on group')
+                # Single detection → count with cooldown, don't mark visited
+                elif not need_pause and (now_ns - last_count) > 15_000_000_000:
                     self.object_counts[name] = self.object_counts.get(name, 0) + 1
                     self.object_cooldown[name] = now_ns
                     self.get_logger().info(
-                        f'COUNTED {name}  (total: {self.object_counts[name]})  '
+                        f'COUNTED {name} (single)  (total: {self.object_counts[name]})  '
                         f'conf={d.score:.2f}  area={area:.0f}')
                     self.save_counts()
+                if self.obj_centering and not self.obj_pause:
+                    # Update to average position of all same-type detections
+                    info = frame_info.get(nl, None)
+                    if info and len(info['xs']) > 0:
+                        self.obj_bbox_center_x = sum(info['xs']) / len(info['xs'])
+                        self.obj_avg_area = sum(info['areas']) / len(info['areas'])
+                # Count during the pause (YOLO keeps detecting while stopped)
+                if self.obj_pause:
+                    if (now_ns - last_count) > 15_000_000_000:
+                        self.object_counts[name] = self.object_counts.get(name, 0) + 1
+                        self.object_cooldown[name] = now_ns
+                        self.get_logger().info(
+                            f'COUNTED {name}  (total: {self.object_counts[name]})  '
+                            f'conf={d.score:.2f}  area={area:.0f}')
+                        self.save_counts()
                 continue
 
             # --- sign reactions: only when close enough (area >= 6000) ---
@@ -251,6 +314,61 @@ class WallFollower(Node):
                     f'Speed change expired (was {self.speed_factor}x) – back to normal')
                 self.speed_factor = 1.0
                 self.speed_change_start_ns = None
+
+        # ---- object pause: stay in front of object for 5s --------------------
+        if self.obj_pause:
+            elapsed = (self.get_clock().now().nanoseconds
+                       - self.obj_pause_start_ns) / 1e9
+            if elapsed >= self.obj_pause_duration:
+                # Done pausing – mark as visited and resume
+                self.get_logger().info(
+                    f'Object pause done ({self.obj_target_name}) – resuming')
+                if self.obj_target_name:
+                    self.obj_visited.add(self.obj_target_name.lower())
+                self.obj_pause = False
+                self.obj_pause_start_ns = None
+                self.obj_centering = False
+                self.obj_bbox_center_x = None
+                self.obj_target_name = None
+            else:
+                # Stay still
+                self.cmd_pub.publish(twist)
+                return
+
+        # ---- object centering: steer to center & approach if too far ---------
+        if self.obj_centering and self.obj_bbox_center_x is not None:
+            img_center = self.image_width / 2.0
+            offset = self.obj_bbox_center_x - img_center  # +ve = object is right
+            tolerance = self.image_width * 0.1  # 10% of image width
+            centered = abs(offset) < tolerance
+            close_enough = self.obj_avg_area >= self.obj_min_area
+
+            if centered and close_enough:
+                # Centered and close enough – start the 5s pause
+                self.get_logger().info(
+                    f'Object centered & close (offset={offset:.0f}px, '
+                    f'avg_area={self.obj_avg_area:.0f}) – '
+                    f'pausing {self.obj_pause_duration}s for YOLO')
+                self.obj_pause = True
+                self.obj_pause_start_ns = self.get_clock().now().nanoseconds
+                self.cmd_pub.publish(twist)
+                return
+            else:
+                # Turn toward the object group
+                if not centered:
+                    turn_speed = 0.3 if abs(offset) > tolerance * 2 else 0.15
+                    twist.angular.z = -turn_speed if offset > 0 else turn_speed
+                # Move forward if too far away
+                if not close_enough:
+                    twist.linear.x = 0.12
+                else:
+                    twist.linear.x = 0.03
+                self.get_logger().info(
+                    f'Centering: offset={offset:.0f}px  avg_area={self.obj_avg_area:.0f}'
+                    f'/{self.obj_min_area:.0f}',
+                    throttle_duration_sec=1.0)
+                self.cmd_pub.publish(twist)
+                return
 
         # ---- wait for first LIDAR scan -------------------------------------
         if not self.lidar_ok:
