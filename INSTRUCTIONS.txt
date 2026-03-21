@@ -19,15 +19,16 @@ source install/setup.bash
 cd /home/ntu-user/ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-ros2 launch ntu_robotsim yolo_unified.launch.py
+ros2 launch ntu_robotsim cw_complete.launch.py
 
+ros2 launch ntu_robotsim yolo_unified.launch.py (non-proper logger)
 ---------------------------------------------
 
 ## 3. Object Detection Outputs
 
 ### 3.1 Live object counts (updated in terminal and saved to file)
-Object counts are printed to the launch terminal every 10 seconds.
-They are also saved to: ~/ros2_ws/object_counts.txt
+Object counts are printed to the new terminal every 1 seconds.
+They are also saved to: /home/ntu-user/ros2_ws/src/NTU_COMP30271_CW_RobotSim/detection_logs
 
 ### 3.2 Run YOLO Live Counter (optional, separate terminal)
 cd /home/ntu-user/ros2_ws/src/NTU_COMP30271_CW_RobotSim/ntu_robotsim/launch && python3 detection_printer.py
