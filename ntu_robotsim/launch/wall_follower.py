@@ -81,6 +81,7 @@ class WallFollower(Node):
 
         # --- publisher -------------------------------------------------------
         self.cmd_pub = self.create_publisher(Twist, '/atlas/cmd_vel', 10)
+        
 
         # --- state -----------------------------------------------------------
         self.front_dist = float('inf')
