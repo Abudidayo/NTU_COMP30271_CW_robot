@@ -17,6 +17,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import PointCloud2
 from geometry_msgs.msg import Twist
+from std_msgs.msg import Bool
 import numpy as np
 
 try:
@@ -70,6 +71,9 @@ class WallFollower(Node):
         self.create_subscription(
             PointCloud2, '/atlas/velodyne_points',
             self.lidar_cb, sensor_qos)
+        self.create_subscription(
+            Bool, '/atlas/wall_follower_enabled',
+            self.wall_follower_enabled_cb, 10)
 
         if HAS_YOLO:
             self.create_subscription(
@@ -94,6 +98,7 @@ class WallFollower(Node):
         self.speed_factor = 1.0
         self.sign_cooldown = {}
         self.permanent_stop = False           # stop sign = permanent halt
+        self.wall_follower_enabled = True
 
         # --- speed change timer (for both slow and fast signs) -----------------
         self.speed_change_start_ns = None
@@ -137,6 +142,19 @@ class WallFollower(Node):
         self.get_logger().info(
             f'Wall follower started  speed={self.linear_speed}  '
             f'wall_d={self.wall_follow_dist}  front_d={self.front_stop_dist}')
+
+    def wall_follower_enabled_cb(self, msg):
+        was_enabled = self.wall_follower_enabled
+        self.wall_follower_enabled = bool(msg.data)
+
+        if was_enabled == self.wall_follower_enabled:
+            return
+
+        state = 'enabled' if self.wall_follower_enabled else 'paused'
+        self.get_logger().info(f'Wall follower override: {state}')
+
+        if not self.wall_follower_enabled:
+            self.cmd_pub.publish(Twist())
 
     # ── LIDAR ───────────────────────────────────────────────────────────────
     def lidar_cb(self, msg):
@@ -300,6 +318,10 @@ class WallFollower(Node):
     # ── CONTROL LOOP ────────────────────────────────────────────────────────
     def control_loop(self):
         twist = Twist()
+
+        if not self.wall_follower_enabled:
+            self.cmd_pub.publish(twist)
+            return
 
         # ---- reset stop confirmation if sign disappeared for >2s ------------
         if self.stop_first_seen_ns is not None and self.stop_last_seen_ns is not None:
