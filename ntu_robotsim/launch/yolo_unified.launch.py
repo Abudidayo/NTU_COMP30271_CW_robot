@@ -74,6 +74,18 @@ def generate_launch_description():
         ]
     )
 
+    # Step F-VO: RTAB-Map Visual Odometry + SLAM
+    launch_rtabmap = TimerAction(
+        period=7.0,
+        actions=[
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(pkg_ntu_robotsim, 'launch', 'rtabmap_vo.launch.py')
+                )
+            )
+        ]
+    )
+
     # Step F: Nav2 Navigation Stack - delayed to allow everything else to initialise
     launch_nav2 = TimerAction(
         period=8.0,
@@ -96,7 +108,24 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='static_map_to_odom_tf',
-        arguments=['0', '0', '0', '0', '0', '0', 'map', 'atlas/odom'],
+        arguments=[
+            '--x', '0', '--y', '0', '--z', '0',
+            '--roll', '0', '--pitch', '0', '--yaw', '0',
+            '--frame-id', 'map', '--child-frame-id', 'atlas/odom',
+        ],
+        parameters=[{'use_sim_time': True}]
+    )
+
+    # Step G-VO: Static Map-to-Odom_VO Transform (for RTABMAP visual odometry)
+    static_map_vo_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='static_map_to_odom_vo_tf',
+        arguments=[
+            '--x', '0', '--y', '0', '--z', '0',
+            '--roll', '0', '--pitch', '0', '--yaw', '0',
+            '--frame-id', 'map', '--child-frame-id', 'atlas/odom_vo',
+        ],
         parameters=[{'use_sim_time': True}]
     )
 
@@ -147,6 +176,8 @@ def generate_launch_description():
         run_rviz,
         launch_nav2,
         static_map_tf,
+        static_map_vo_tf,
+        launch_rtabmap,
         launch_yolo,
         launch_wall_follower,
     ])

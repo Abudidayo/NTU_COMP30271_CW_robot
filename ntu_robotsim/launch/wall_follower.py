@@ -122,6 +122,14 @@ class WallFollower(Node):
         self.image_width = 640.0            # camera image width in pixels
         self.obj_visited = set()            # objects already centered & counted
 
+        # --- stuck detection & recovery --------------------------------------
+        self.stuck_start_ns = None        # when we first detected being stuck
+        self.stuck_threshold = 1.5        # seconds before triggering recovery
+        self.recovering = False           # True = currently backing up
+        self.recover_start_ns = None
+        self.recover_duration = 2.0       # seconds to back up and turn
+        self.last_positions = []          # track recent front_dist to detect no movement
+
         # --- control loop at 10 Hz ------------------------------------------
         self.create_timer(0.1, self.control_loop)
         # --- save object counts every 10 s ----------------------------------
@@ -375,6 +383,47 @@ class WallFollower(Node):
         if not self.lidar_ok:
             self.cmd_pub.publish(twist)
             return
+
+        now_ns = self.get_clock().now().nanoseconds
+
+        # ---- stuck recovery: back up and turn left -------------------------
+        if self.recovering:
+            elapsed = (now_ns - self.recover_start_ns) / 1e9
+            if elapsed < self.recover_duration:
+                twist.linear.x = -0.20          # reverse
+                twist.angular.z = 0.6           # turn left while reversing
+                self.cmd_pub.publish(twist)
+                self.get_logger().info(
+                    f'RECOVERING: backing up {elapsed:.1f}/{self.recover_duration}s',
+                    throttle_duration_sec=0.5)
+                return
+            else:
+                self.get_logger().info('Recovery done – resuming wall following')
+                self.recovering = False
+                self.recover_start_ns = None
+                self.stuck_start_ns = None
+
+        # ---- stuck detection: front & right both blocked -------------------
+        is_stuck = (self.front_dist < self.front_stop_dist * 0.8
+                    and self.right_dist < self.wall_follow_dist * 0.5)
+        # Also stuck if front is very close and left is also close (boxed in)
+        is_boxed = (self.front_dist < self.front_stop_dist * 0.6
+                    and self.left_dist < self.wall_follow_dist * 0.8)
+
+        if is_stuck or is_boxed:
+            if self.stuck_start_ns is None:
+                self.stuck_start_ns = now_ns
+            elif (now_ns - self.stuck_start_ns) / 1e9 > self.stuck_threshold:
+                self.get_logger().warn(
+                    f'STUCK detected (front={self.front_dist:.2f} '
+                    f'right={self.right_dist:.2f} left={self.left_dist:.2f}) '
+                    f'– starting recovery')
+                self.recovering = True
+                self.recover_start_ns = now_ns
+                self.cmd_pub.publish(twist)
+                return
+        else:
+            self.stuck_start_ns = None
 
         speed = self.linear_speed * self.speed_factor
         turn = self.angular_speed
