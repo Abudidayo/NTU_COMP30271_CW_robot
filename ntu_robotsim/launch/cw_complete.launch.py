@@ -46,6 +46,18 @@ def generate_launch_description():
         ]
     )
 
+    # Step C2: RTAB-Map Visual Odometry + SLAM
+    launch_rtabmap_vo = TimerAction(
+        period=7.0,
+        actions=[
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(pkg_ntu_robotsim, 'launch', 'rtabmap_vo.launch.py')
+                )
+            )
+        ]
+    )
+
     # Step D: OctoMap Server (3D Mapping)
     launch_octomap = TimerAction(
         period=6.0,
@@ -160,6 +172,7 @@ def generate_launch_description():
         launch_maze,
         launch_robot,
         launch_odom_tf,
+        launch_rtabmap_vo,
         launch_octomap,
         run_rviz,
         launch_nav2,

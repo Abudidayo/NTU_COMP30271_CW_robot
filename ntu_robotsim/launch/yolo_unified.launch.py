@@ -10,7 +10,6 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     pkg_ntu_robotsim = get_package_share_directory('ntu_robotsim')
     pkg_nav2_bringup = get_package_share_directory('nav2_bringup')
-    pkg_odom_tf = get_package_share_directory('odom_to_tf_ros2')
     pkg_octomap_server = get_package_share_directory('octomap_server2')
 
     nav2_params_path = os.path.join(pkg_ntu_robotsim, 'config', 'nav2_params.yaml')
@@ -34,17 +33,8 @@ def generate_launch_description():
         ]
     )
 
-    # Step C: Ground Truth Odometry to TF Broadcaster
-    launch_odom_tf = TimerAction(
-        period=5.0,
-        actions=[
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(pkg_odom_tf, 'launch', 'atlas_odom_to_tf.launch.py')
-                )
-            )
-        ]
-    )
+    # Step C: Visual Odometry (replaces ground-truth odometry)
+    # Ground-truth odom from Gazebo removed — using RTABMAP VO instead (Step F-VO)
 
     # Step D: OctoMap Server (3D Mapping)
     launch_octomap = TimerAction(
@@ -103,18 +93,7 @@ def generate_launch_description():
         ]
     )
 
-    # Step G: Static Map-to-Odom Transform
-    static_map_tf = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_map_to_odom_tf',
-        arguments=[
-            '--x', '0', '--y', '0', '--z', '0',
-            '--roll', '0', '--pitch', '0', '--yaw', '0',
-            '--frame-id', 'map', '--child-frame-id', 'atlas/odom',
-        ],
-        parameters=[{'use_sim_time': True}]
-    )
+    # Step G: (Removed — ground-truth odom no longer used)
 
     # Step G-VO: Static Map-to-Odom_VO Transform (for RTABMAP visual odometry)
     static_map_vo_tf = Node(
@@ -171,11 +150,9 @@ def generate_launch_description():
     return LaunchDescription([
         launch_maze,
         launch_robot,
-        launch_odom_tf,
         launch_octomap,
         run_rviz,
         launch_nav2,
-        static_map_tf,
         static_map_vo_tf,
         launch_rtabmap,
         launch_yolo,

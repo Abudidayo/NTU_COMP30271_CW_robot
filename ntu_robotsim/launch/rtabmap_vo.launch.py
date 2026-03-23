@@ -54,7 +54,7 @@ def generate_launch_description():
             'subscribe_depth': True,
             'approx_sync': True,
             'queue_size': 10,
-            'publish_tf': False,            # we publish map→odom_vo statically
+            'publish_tf': True,             # publish map→odom_vo transform
             # RTAB-Map database (reset each run)
             'database_path': '/tmp/rtabmap.db',
             'Mem/IncrementalMemory': 'true',
